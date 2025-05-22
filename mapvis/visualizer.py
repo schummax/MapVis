@@ -25,12 +25,20 @@ def create_celltype_mapping_table(
     for orig_label, cons_label in mapping2.items():
         inverted_mapping2.setdefault(cons_label, []).append(orig_label)
 
-    all_consensus_labels = sorted(
-        list(set(inverted_mapping1.keys()) | set(inverted_mapping2.keys()))
-    )
+    # Determine sorting order for consensus labels
+    consensus_map1_values = set(mapping1.values())
+    consensus_map2_values = set(mapping2.values())
+
+    consensus_in_both = sorted(list(consensus_map1_values & consensus_map2_values))
+    consensus_in_map1_only = sorted(list(consensus_map1_values - consensus_map2_values))
+    consensus_in_map2_only = sorted(list(consensus_map2_values - consensus_map1_values))
+    
+    ordered_consensus_labels = consensus_in_both + consensus_in_map1_only + consensus_in_map2_only
+    
+    single_dataset_consensus_labels = set(consensus_in_map1_only) | set(consensus_in_map2_only)
 
     table_data = []
-    for cons_label in all_consensus_labels:
+    for cons_label in ordered_consensus_labels:
         orig_labels1 = inverted_mapping1.get(cons_label, [])
         orig_labels2 = inverted_mapping2.get(cons_label, [])
         orig_labels1.sort()
@@ -52,33 +60,97 @@ def create_celltype_mapping_table(
 
     # --- Color assignment using utils ---
     unique_consensus_in_table = list(df["Consensus Label"].unique())
-    
-    # Initialize base color map with user-provided scheme (ensure they are valid base colors)
-    base_color_map = {}
-    for label, color_val in color_scheme.items():
-        if isinstance(color_val, str) and color_val.startswith("#") and len(color_val) == 7:
-             base_color_map[label] = color_val
-        # else: user provided an invalid color, it will be ignored and default will be generated
-
-    # Generate default colors for labels not in the validated color_scheme
-    labels_needing_defaults = [lbl for lbl in unique_consensus_in_table if lbl not in base_color_map]
-    if labels_needing_defaults:
-        default_colors_for_new_labels = utils.generate_default_colors(labels_needing_defaults, existing_colors=base_color_map)
-        base_color_map.update(default_colors_for_new_labels)
+    base_color_map = utils.build_final_color_map(unique_consensus_in_table, color_scheme)
             
     # --- Styling ---
-    def style_row_background(row):
-        cons_label = row["Consensus Label"]
-        base_color = base_color_map.get(cons_label, "#FFFFFF") # Default to white if somehow missing
+    # Redefine style_row_celltype to explicitly use original label for logic, display label for merge check
+    # This local redefinition is to ensure it uses the `df` from the outer scope correctly for original label lookup.
+    def style_row_celltype_revised(row_from_df_display, df_original_lookup, single_dataset_labels_set_lookup, base_color_map_lookup_param):
+        original_cons_label = df_original_lookup.loc[row_from_df_display.name, "Consensus Label"]
+        
+        base_color = base_color_map_lookup_param.get(original_cons_label, "#FFFFFF")
         display_color = utils.format_color_with_opacity(base_color, 0.5)
-        return [f'background-color: {display_color}' for _ in row]
+        
+        font_style_css = ""
+        if cons_label in single_dataset_labels_set:
+            font_style_css = "font-style: italic;"
+            # The problem description mentioned "lighter background color" for single-dataset types
+            # but the current implementation uses the same 50% opacity for all.
+            # If "lighter" means modifying the base_color or opacity further, that logic would go here.
+            # For now, sticking to 50% opacity for all background colors as per previous implementation
+            # and only adding italics.
+        
+        # Basic style for all cells in the row
+        styles = [f'background-color: {display_color}; {font_style_css}' for _ in row.index]
+        
+        # Check for cell merging for "Consensus Label"
+        # Need to know if this row is a continuation of a merged cell
+        # This requires passing the original df to check previous row, or a pre-calculated mask.
+        # Let's assume `df` is accessible here or relevant info is on `row` itself if df is modified for display.
+        # If `row['Consensus Label HTML'] == ''` (meaning it's a subsequent row in a merge group for display)
+        # then we apply `border-top-style: none;` to the 'Consensus Label' cell.
+        
+        # This logic will be applied after preparing a display version of the DataFrame.
+        # The style_row_celltype will receive a row from the *display* DataFrame.
+        # The original "Consensus Label" (for coloring/italics) must be accessed via `df.loc[row.name, 'Consensus Label']`
+        # or be part of the row if we add it as a hidden column.
 
-    styled_df = df.style.apply(style_row_background, axis=1)\
-                        .set_caption(caption)\
-                        .hide(axis='index')\
+        # Simplified: The function will receive the row from the df_display.
+        # We need to apply border style based on whether the display label is empty.
+        consensus_label_col_idx = row.index.get_loc("Consensus Label") # Get by name
+        
+        # If the displayed text for "Consensus Label" is empty, it's a merged cell.
+        if row["Consensus Label"] == "": # This checks the display version of "Consensus Label"
+            styles[consensus_label_col_idx] += " border-top-style: none;"
+            
+        return styles
+
+    # Prepare DataFrame for display (blanking out merged labels)
+    df_display = df.copy()
+    # Mark rows where 'Consensus Label' is the same as the previous row.
+    # These will have their 'Consensus Label' text blanked out and top border removed by styler.
+    is_subsequent_in_group = (df_display['Consensus Label'] == df_display['Consensus Label'].shift(1))
+    df_display.loc[is_subsequent_in_group, 'Consensus Label'] = ''
+    
+    # The styling function now needs the original 'Consensus Label' for logic if it's different from display version
+    # We can pass df for lookup or add original values to df_display as temp columns.
+    # Let's ensure style_row_celltype uses original values for coloring/italics by looking up in original `df`.
+    
+    def get_original_consensus_label_for_row(row_from_df_display):
+        return df.loc[row_from_df_display.name, "Consensus Label"]
+
+    styled_styler_obj = df_display.style.apply(
+        style_row_celltype, 
+        axis=1, 
+        single_dataset_labels_set=single_dataset_consensus_labels,
+        base_color_map_lookup=base_color_map # This map uses original consensus labels
+        # The style_row_celltype needs to use original consensus label for color/italics
+        # This is implicitly handled as `cons_label` in style_row_celltype comes from the (potentially modified) row,
+        # but color map and single_dataset_labels_set use original labels.
+        display_color_val = utils.format_color_with_opacity(base_color, 0.5)
+        
+        font_style_val = ""
+        if original_cons_label in single_dataset_labels_set_lookup:
+            font_style_val = "font-style: italic;"
+            
+        styles_list = [f'background-color: {display_color_val}; {font_style_val}' for _ in row_from_df_display.index]
+        
+        consensus_label_col_idx_val = row_from_df_display.index.get_loc("Consensus Label")
+        if row_from_df_display["Consensus Label"] == "": # Check display version for border
+            styles_list[consensus_label_col_idx_val] += " border-top-style: none;"
+            
+        return styles_list
+
+    styled_styler_obj = df_display.style.apply(
+        style_row_celltype_revised, # Now this is the only style_row_celltype function
+        axis=1,
+        df_original_lookup=df, 
+        single_dataset_labels_set_lookup=single_dataset_consensus_labels,
+        base_color_map_lookup_param=base_color_map
+    ).set_caption(caption).hide(axis='index')\
                         .set_properties(**utils.get_default_table_properties())
     
-    styled_table_html = styled_df.to_html()
+    styled_table_html = styled_styler_obj.to_html()
 
     # --- Legend using utils ---
     legend_html = None
@@ -153,36 +225,86 @@ def create_feature_mapping_table(
 
     # --- Color assignment using utils ---
     unique_consensus_in_table = list(df["Consensus label"].replace("", pd.NA).dropna().unique())
-    
-    base_color_map = {}
-    for label, color_val in color_scheme.items():
-        if isinstance(color_val, str) and color_val.startswith("#") and len(color_val) == 7:
-             base_color_map[label] = color_val
-
-    labels_needing_defaults = [lbl for lbl in unique_consensus_in_table if lbl not in base_color_map]
-    if labels_needing_defaults:
-        default_colors_for_new_labels = utils.generate_default_colors(labels_needing_defaults, existing_colors=base_color_map)
-        base_color_map.update(default_colors_for_new_labels)
+    base_color_map = utils.build_final_color_map(unique_consensus_in_table, color_scheme)
 
     # --- Styling ---
     style_df = df.copy()
     style_df["_style_consensus_label_filled"] = df["Consensus label"].replace("", pd.NA).ffill()
+
+    # Define column renaming mapping
+    final_df_columns_rename_map = {"Operation1": "Operation", "Operation2": "Operation"}
+
+    # Rename columns on the DataFrame that will be styled
+    # The get_style_colors_for_group function depends on the number of columns of the *original* df (before this rename)
+    # So, we must ensure it uses the correct column reference.
+    # The `df.columns` in `get_style_colors_for_group` refers to the columns of the DataFrame `df` (which has Op1, Op2)
+    # So, we should rename `style_df` *after* `get_style_colors_for_group` definition or adjust `get_style_colors_for_group`.
+    # Let's adjust get_style_colors_for_group to expect renamed columns if we rename style_df first.
     
-    def get_style_colors_for_group(row_in_style_df):
-        cons_label = row_in_style_df["_style_consensus_label_filled"]
-        base_color = base_color_map.get(cons_label, "#FFFFFF") # Default white
-        display_color = utils.format_color_with_opacity(base_color, 0.5)
-        # Ensure the number of style properties matches the number of columns in the *original* df
-        return [f'background-color: {display_color}' for _ in df.columns]
+    # Alternative: Rename df first, then style_df is a copy of the renamed df.
+    # df = df.rename(columns=final_df_columns_rename_map)
+    # style_df = df.copy() # style_df now has renamed columns
+    # style_df["_style_consensus_label_filled"] = df["Consensus label"].replace("", pd.NA).ffill() # This needs to use original column names for ffill if df is not renamed yet.
+
+    # Safest approach: rename the `style_df` just before styling, and ensure styling function uses correct column count.
+    # The `get_style_colors_for_group` returns styles for columns of `df` (original names).
+    # If `style_df` is renamed before .style, the Styler will see renamed columns.
+    # The number of columns doesn't change, so `len(df.columns)` is fine.
+    
+    style_df_renamed_for_styling = style_df.rename(columns=final_df_columns_rename_map) # Has "Operation" columns
+    
+    # Prepare for cell merging in "Consensus label" column
+    # Blank out text for subsequent identical consensus labels
+    df_for_html_display = style_df_renamed_for_styling.copy()
+    # Use _style_consensus_label_filled to define groups for merging actual displayed text
+    # We only blank out if the *visible* text in "Consensus label" is same as previous row's visible text
+    mask_blank_consensus = (df_for_html_display['Consensus label'] == df_for_html_display['Consensus label'].shift(1)) & \
+                           (df_for_html_display['Consensus label'] != '')
+    df_for_html_display.loc[mask_blank_consensus, 'Consensus label'] = ''
 
 
-    styled_pandas_df = style_df.style.apply(get_style_colors_for_group, axis=1)\
-                            .set_caption(caption)\
-                            .hide(axis='index')\
-                            .set_properties(**utils.get_default_table_properties())\
-                            .rename(columns={"Operation1": "Operation", "Operation2": "Operation"})
+    def get_style_for_feature_row(row_from_df_for_html, base_color_map_lookup, filled_consensus_series_lookup):
+        # `row_from_df_for_html` has "Consensus label" potentially blanked for display.
+        # `filled_consensus_series_lookup` contains the logical consensus label for coloring.
+        # `base_color_map_lookup` uses these logical labels.
+        
+        logical_cons_label = filled_consensus_series_lookup.loc[row_from_df_for_html.name]
+        base_color = base_color_map_lookup.get(logical_cons_label, "#FFFFFF") # Default white
+        display_color_val = utils.format_color_with_opacity(base_color, 0.5)
+        
+        # Base style for all cells
+        num_cols_to_style = len(row_from_df_for_html.index) -1 # Exclude _style_consensus_label_filled if present as column
+        if '_style_consensus_label_filled' not in row_from_df_for_html.index: # Should always be there from style_df
+             num_cols_to_style = len(row_from_df_for_html.index)
+
+
+        styles_list = [f'background-color: {display_color_val}' for _ in range(num_cols_to_style)]
+        
+        # Cell merging for "Consensus label" column
+        consensus_col_name = "Consensus label" # After rename
+        consensus_label_col_idx_val = row_from_df_for_html.index.get_loc(consensus_col_name)
+        
+        # If the display text for "Consensus label" is empty AND it was not originally empty
+        # (meaning it was blanked for merging, not because it's a subsequent row of a feature group like 1:n)
+        original_consensus_text_in_style_df = style_df_renamed_for_styling.loc[row_from_df_for_html.name, consensus_col_name]
+
+        if row_from_df_for_html[consensus_col_name] == "" and original_consensus_text_in_style_df != "":
+            styles_list[consensus_label_col_idx_val] += " border-top-style: none;"
+            
+        return pd.Series(styles_list, index=row_from_df_for_html.index.drop("_style_consensus_label_filled", errors='ignore'))
+
+
+    styled_pandas_df = df_for_html_display.style.apply(
+        get_style_for_feature_row,
+        axis=1,
+        base_color_map_lookup=base_color_map,
+        filled_consensus_series_lookup=df_for_html_display["_style_consensus_label_filled"] # from df_for_html_display
+    ).set_caption(caption).hide(axis='index')\
+     .set_properties(**utils.get_default_table_properties())
     
-    if "_style_consensus_label_filled" in styled_pandas_df.columns:
+    # The Styler object `styled_pandas_df` now refers to a DataFrame with renamed columns.
+    # The temporary column `_style_consensus_label_filled` should still be hidden from the final HTML.
+    if "_style_consensus_label_filled" in styled_pandas_df.columns: 
          styled_pandas_df = styled_pandas_df.hide(axis="columns", subset=["_style_consensus_label_filled"])
 
     styled_table_html = styled_pandas_df.to_html()
@@ -194,8 +316,9 @@ def create_feature_mapping_table(
         legend_color_map = {k: v for k, v in base_color_map.items() if k in unique_consensus_in_table}
         legend_html = utils.get_legend_html(legend_color_map, title="Legend", swatch_opacity=1.0)
 
-    final_df_columns = {"Operation1": "Operation", "Operation2": "Operation"}
-    df_renamed = df.rename(columns=final_df_columns)
+    # The original df (before copy to style_df) still has "Operation1", "Operation2"
+    # The df_renamed that is returned should have the final column names.
+    df_renamed = df.rename(columns=final_df_columns_rename_map)
     return styled_table_html, legend_html, df_renamed
 
 

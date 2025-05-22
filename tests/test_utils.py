@@ -89,6 +89,74 @@ class TestGetDefaultTableProperties(unittest.TestCase):
         self.assertIsInstance(props, dict)
         self.assertTrue(len(props) > 0)
         self.assertIn('border', props)
+        self.assertIn('vertical-align', props)
+        self.assertEqual(props['vertical-align'], 'middle')
+
+
+class TestBuildFinalColorMap(unittest.TestCase):
+
+    def test_no_user_scheme(self):
+        labels = ["a", "b", "c"]
+        color_map = utils.build_final_color_map(labels)
+        self.assertEqual(len(color_map), len(labels))
+        for label in labels:
+            self.assertIn(label, color_map)
+            self.assertTrue(color_map[label].startswith("#"))
+            self.assertEqual(len(color_map[label]), 7) # 6 hex + #
+
+    def test_user_scheme_covers_all(self):
+        labels = ["a", "b"]
+        user_scheme = {"a": "#FF0000", "b": "#00FF00"}
+        color_map = utils.build_final_color_map(labels, user_scheme)
+        self.assertEqual(color_map, user_scheme)
+
+    def test_user_scheme_partial(self):
+        labels = ["a", "b", "c"]
+        user_scheme = {"a": "#FF0000"}
+        color_map = utils.build_final_color_map(labels, user_scheme)
+        self.assertEqual(len(color_map), len(labels))
+        self.assertEqual(color_map["a"], "#FF0000")
+        self.assertIn("b", color_map)
+        self.assertIn("c", color_map)
+        self.assertNotEqual(color_map["b"], "#FF0000")
+        self.assertNotEqual(color_map["c"], "#FF0000")
+        self.assertNotEqual(color_map["b"], color_map["c"])
+
+    def test_user_scheme_invalid_colors(self):
+        labels = ["a", "b", "c"]
+        # "a" is valid, "b" is invalid short, "c" is invalid format
+        user_scheme = {"a": "#123456", "b": "#123", "c": "notacolor"}
+        color_map = utils.build_final_color_map(labels, user_scheme)
+        
+        self.assertEqual(len(color_map), len(labels))
+        self.assertEqual(color_map["a"], "#123456") # Valid user color kept
+        
+        # "b" and "c" should get default colors
+        self.assertIn("b", color_map)
+        self.assertNotEqual(color_map["b"], "#123") 
+        self.assertTrue(color_map["b"].startswith("#") and len(color_map["b"]) == 7)
+        
+        self.assertIn("c", color_map)
+        self.assertNotEqual(color_map["c"], "notacolor")
+        self.assertTrue(color_map["c"].startswith("#") and len(color_map["c"]) == 7)
+        
+        self.assertNotEqual(color_map["b"], color_map["a"])
+        self.assertNotEqual(color_map["c"], color_map["a"])
+        self.assertNotEqual(color_map["b"], color_map["c"])
+
+
+    def test_empty_unique_labels(self):
+        self.assertEqual(utils.build_final_color_map([]), {})
+        self.assertEqual(utils.build_final_color_map([], user_color_scheme={"a": "#FF0000"}), {})
+
+    def test_user_scheme_has_extra_labels_not_in_table(self):
+        labels_in_table = ["a", "b"]
+        user_scheme = {"a": "#FF0000", "b": "#00FF00", "extra": "#0000FF"}
+        color_map = utils.build_final_color_map(labels_in_table, user_scheme)
+        self.assertEqual(len(color_map), len(labels_in_table))
+        self.assertNotIn("extra", color_map)
+        self.assertEqual(color_map["a"], "#FF0000")
+        self.assertEqual(color_map["b"], "#00FF00")
 
 
 class TestGetDefaultLegendStyles(unittest.TestCase):

@@ -89,7 +89,8 @@ def get_default_table_properties() -> dict:
         'border': '1px solid #DDDDDD',
         'padding': '8px',
         'text-align': 'left',
-        'min-width': '70px' # Consistent with visualizer.py
+        'min-width': '70px', # Consistent with visualizer.py
+        'vertical-align': 'middle' # Added for cell merging
     }
 
 def get_default_legend_styles() -> dict[str, str]:
@@ -156,5 +157,53 @@ def get_legend_html(
         f'<h4 style="margin-top:0; margin-bottom:10px;">{title}</h4>'
         f'{"".join(legend_items_html)}</div>'
     )
+
+
+def build_final_color_map(
+    unique_labels_in_table: list[str], 
+    user_color_scheme: dict = None
+) -> dict[str, str]:
+    """
+    Builds the final map of consensus labels to 6-digit hex colors.
+    It prioritizes user-provided colors and generates defaults for missing ones.
+
+    Args:
+        unique_labels_in_table: A list of unique consensus labels that appear in the table.
+        user_color_scheme: Optional dictionary from user mapping labels to 6-digit hex colors.
+
+    Returns:
+        A dictionary mapping all unique labels in the table to a 6-digit hex color.
+    """
+    if user_color_scheme is None:
+        user_color_scheme = {}
+    
+    final_map = {}
+    # Validate and add user-provided colors first
+    for label, color_val in user_color_scheme.items():
+        if isinstance(color_val, str) and color_val.startswith("#") and len(color_val) == 7:
+             final_map[label] = color_val
+        # Invalid user colors are ignored; defaults will be generated if the label is in unique_labels_in_table
+    
+    # Identify labels that are in the table but not yet in our map (either not provided or invalidly provided)
+    labels_needing_defaults = [lbl for lbl in unique_labels_in_table if lbl not in final_map]
+    
+    if labels_needing_defaults:
+        # Pass `final_map` as `existing_colors` to avoid re-assigning valid user colors
+        # and to ensure new default colors are unique among themselves and from user colors.
+        default_colors = generate_default_colors(labels_needing_defaults, existing_colors=final_map)
+        final_map.update(default_colors)
+        
+    # Ensure all unique_labels_in_table have a color; some might not be in user_color_scheme
+    # and might not have been processed if user_color_scheme contained all of them with valid colors.
+    # This step is mostly redundant if generate_default_colors correctly handles existing_colors.
+    # The primary loop for labels_needing_defaults should cover everything.
+    # However, it's good to be certain every label in the table gets a color.
+    # Let's re-check. If a label was in unique_labels_in_table but not in user_color_scheme,
+    # it would be in labels_needing_defaults and get a color.
+    # If it was in user_color_scheme (validly), it's in final_map.
+    # If it was in user_color_scheme (invalidly), it's treated as if not provided, so in labels_needing_defaults.
+    # So, the logic seems fine.
+
+    return final_map
 
 ```
