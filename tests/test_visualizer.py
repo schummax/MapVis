@@ -118,7 +118,7 @@ class TestCelltypeMappingTable(unittest.TestCase):
             self.mapping1, self.mapping2, caption=caption)
         self.assertIn(f"<caption>{caption}</caption>", html_table)
 
-
+        
 class TestFeatureMappingTable(unittest.TestCase):
 
     def setUp(self):
@@ -217,6 +217,7 @@ class TestFeatureMappingTable(unittest.TestCase):
         self.assertEqual(df_res.iloc[0]["Consensus label"], "R4a")  # First RNA
         self.assertEqual(df_res.iloc[0]["Operation"].iloc[0], "max()")
         self.assertEqual(df_res.iloc[0]["Operation"].iloc[1], "sum()")
+
         self.assertEqual(df_res.iloc[0]["Protein name"], "P4a")
         self.assertEqual(df_res.iloc[0]["RNA name"], "R4a")
         self.assertEqual(df_res.iloc[1]["Protein name"], "P4b")
@@ -298,3 +299,4 @@ if __name__ == '__main__':
 # This was fixed in a previous agent turn by changing the assertion to:
 # self.assertEqual(df_res.iloc[0]["Operation"].iloc[0] if isinstance(df_res.iloc[0]["Operation"], pd.Series) else df_res.iloc[0]["Operation"], "")
 # This content provided in the prompt does not include that fix. I will proceed with the content as given.
+

@@ -1,8 +1,13 @@
-# This file makes 'mapvis' a package.
-# You can leave it empty or add package-level imports here if needed.
+"""
+MapVis: A package for visualizing cell type and feature mappings.
+"""
 
-# Example: make key functions available directly from 'import mapvis'
-# from .visualizer import create_celltype_mapping_table, create_feature_mapping_table
-# from .utils import format_color_with_opacity, get_legend_html
+from .visualizer import create_celltype_mapping_table, create_feature_mapping_table
 
-# For now, just ensuring it's a package.
+__all__ = [
+    'create_celltype_mapping_table',
+    'create_feature_mapping_table'
+]
+
+__version__ = "0.1.0"
+
