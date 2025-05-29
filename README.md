@@ -4,11 +4,12 @@ A Python module for visualizing celltype and feature (RNA/Protein) mappings betw
 
 ## Installation
 
-````bash
+```bash
 pip install mapvis
 
 # For image export functionality
 pip install mapvis[image]
+```
 
 ## Quick Start
 
@@ -41,7 +42,7 @@ styled_table = vis.visualize_celltype_mapping(
 
 # Display in Jupyter
 styled_table
-````
+```
 
 ### Feature Mapping
 
