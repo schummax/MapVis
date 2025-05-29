@@ -124,28 +124,6 @@ mapping = load_mapping_from_csv(
 )
 ```
 
-## Features
-
-Color-coded visualization based on consensus labels
-Support for both celltype and feature mappings
-Automatic operation detection (sum/max) for many-to-one mappings
-Multi-line cells for multiple features mapping to same consensus
-Custom color maps support
-Automatic sorting (mappings in both datasets first, single-dataset mappings last)
-Export styled tables to image files (PNG, JPG, etc.)
-CSV file support
-Input validation
-Customizable column names
-Hidden table index for cleaner display
-
-## Backends for Image Export
-
-The image export functionality supports multiple backends:
-
-chrome (default): Best quality, requires Chrome/Chromium
-matplotlib: Works without browser, very fast, but limited styling support
-selenium: Alternative browser-based option, requires Firefox
-
 ## Testing
 
 ```bash
